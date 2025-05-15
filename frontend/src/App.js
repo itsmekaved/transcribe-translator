@@ -20,9 +20,7 @@ function App() {
 
   const handleCheckboxChange = (lang) => {
     setSelectedLanguages((prev) =>
-      prev.includes(lang)
-        ? prev.filter((l) => l !== lang)
-        : [...prev, lang]
+      prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang]
     );
   };
 
@@ -38,7 +36,7 @@ function App() {
     const formData = new FormData();
     formData.append('audio', file);
     selectedLanguages.forEach((lang) => formData.append('languages', lang));
-    formData.append('sentiment', enableSentiment); // Pass toggle to backend (optional logic)
+    formData.append('sentiment', enableSentiment);
 
     try {
       const response = await fetch('http://127.0.0.1:5000/upload', {
@@ -110,10 +108,17 @@ function App() {
         {Object.keys(translations).length > 0 && (
           <>
             <h2>Translations</h2>
-            {Object.entries(translations).map(([lang, text]) => (
+            {Object.entries(translations).map(([lang, data]) => (
               <div key={lang} className="translation-block">
                 <h3>{lang.toUpperCase()}:</h3>
-                <p>{text}</p>
+                {data.text && (
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{data.text}</p>
+                )}
+                {data.audio && (
+                  <audio controls src={data.audio}>
+                    Your browser does not support the audio element.
+                  </audio>
+                )}
               </div>
             ))}
           </>

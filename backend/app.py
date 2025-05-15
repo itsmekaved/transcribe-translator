@@ -1,12 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, url_for
 from flask_cors import CORS
 from google.cloud import speech_v1 as speech
 from google.cloud import translate_v2 as translate
 from pydub import AudioSegment
 from textblob import TextBlob
+from gtts import gTTS
 import wave
 import os
 import time
+import uuid
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +16,10 @@ CORS(app)
 # Google Cloud clients
 speech_client = speech.SpeechClient.from_service_account_file('/home/kaved/Downloads/key.json')
 translate_client = translate.Client.from_service_account_json('/home/kaved/Downloads/key.json')
+
+# TTS output folder
+TTS_FOLDER = os.path.join(app.root_path, 'static', 'tts')
+os.makedirs(TTS_FOLDER, exist_ok=True)
 
 def convert_to_mono(input_path, output_path):
     audio = AudioSegment.from_file(input_path)
@@ -32,6 +38,14 @@ def get_star_rating(polarity):
     else:
         return "⭐ (Very Negative)"
 
+def generate_tts(text, lang_code):
+    tts = gTTS(text=text, lang=lang_code)
+    filename = f"tts_{uuid.uuid4().hex}.mp3"
+    filepath = os.path.join(TTS_FOLDER, filename)
+    tts.save(filepath)
+    audio_url = url_for('static', filename=f'tts/{filename}', _external=True)
+    return audio_url
+
 @app.route('/upload', methods=['POST'])
 def upload():
     if 'audio' not in request.files:
@@ -43,13 +57,12 @@ def upload():
     audio_path = 'temp_audio.wav'
     mono_path = 'mono_audio.wav'
     audio_file.save(audio_path)
-
     convert_to_mono(audio_path, mono_path)
 
     with wave.open(mono_path, "rb") as wav_file:
         sample_rate = wav_file.getframerate()
 
-    # Speech-to-text timing
+    # Speech-to-text
     stt_start = time.time()
     with open(mono_path, 'rb') as f:
         content = f.read()
@@ -68,14 +81,20 @@ def upload():
             transcript += result.alternatives[0].transcript + " "
     transcript = transcript.strip()
 
-    # Translation timing
+    # Translation + TTS
     translation_start = time.time()
     translations = {}
     for lang in languages:
         result = translate_client.translate(transcript, target_language=lang)
-        translations[lang] = f"\n[{lang}]\n{result['translatedText']}"
+        translated_text = result['translatedText']
+        audio_url = generate_tts(translated_text, lang.lower())
+        translations[lang] = {
+            "text": translated_text,
+            "audio": audio_url
+        }
     translation_end = time.time()
 
+    # Sentiment analysis
     sentiment_start = time.time()
     blob = TextBlob(transcript)
     polarity = blob.sentiment.polarity
@@ -87,7 +106,7 @@ def upload():
     }
     sentiment_end = time.time()
 
-    # Cleanup
+    # Cleanup temporary files
     os.remove(audio_path)
     os.remove(mono_path)
 
